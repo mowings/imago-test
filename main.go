@@ -46,7 +46,7 @@ func scale(worker_id int) bool {
 				"s3://turbosquid-hackathon/imago/foo.png",
 				fmt.Sprintf("s3://turbosquid-hackathon/imago/out/foo-%d.tiff", worker_id),
 				"image/tiff",
-				[]string{"resize 4000x4000"},
+				[]string{"resize 2000x2000"},
 			},
 		},
 	}
@@ -60,15 +60,23 @@ func scale(worker_id int) bool {
 		return false
 	}
 	var server_response map[string]interface{}
+	defer resp.Body.Close()
 	dec := json.NewDecoder(resp.Body)
 	_ = dec.Decode(&server_response)
-	log.Printf("Id: %s, queue_length: %f\n", server_response["id"], server_response["queue_length"])
+	log.Printf("Id: %s, queue_length: %d\n", server_response["id"], int(server_response["queue_length"].(float64)))
 	resp, err = http.Get(SERVER + "/api/v1/work/" + server_response["id"].(string) + "?timeout=300")
 	if err != nil {
 		return false
 	}
 	if resp.StatusCode == 200 {
-		log.Println("Conversion complete")
+		dec = json.NewDecoder(resp.Body)
+		_ = dec.Decode(&server_response)
+		if server_response["status"] == "error" {
+			log.Println("conversion failed.")
+			return false
+		} else {
+			log.Println("conversion complete")
+		}
 	} else {
 		log.Printf("Conversion failed. Status: %d\n", resp.StatusCode)
 		return false
