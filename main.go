@@ -11,8 +11,6 @@ import (
 	"time"
 )
 
-const SERVER = "http://localhost:3000"
-
 type Action struct {
 	Infile     string   `json:"infile"`
 	Outfile    string   `json:"outfile"`
@@ -28,7 +26,7 @@ var total int
 var errors int
 var mutex = &sync.Mutex{}
 
-func scale(worker_id int) bool {
+func scale(worker_id int, server *string) bool {
 	var err error
 	defer func() {
 		if err != nil {
@@ -64,8 +62,9 @@ func scale(worker_id int) bool {
 		},
 	}
 	out, _ := json.Marshal(req)
-	resp, err := http.Post(SERVER+"/api/v1/work", "application/json", bytes.NewBuffer(out))
+	resp, err := http.Post(*server+"/api/v1/work", "application/json", bytes.NewBuffer(out))
 	if err != nil {
+		log.Println(err.Error())
 		return false
 	}
 	if resp.StatusCode != 200 {
@@ -76,7 +75,7 @@ func scale(worker_id int) bool {
 	defer resp.Body.Close()
 	dec := json.NewDecoder(resp.Body)
 	_ = dec.Decode(&server_response)
-	resp, err = http.Get(SERVER + "/api/v1/work/" + server_response["id"].(string) + "?timeout=300")
+	resp, err = http.Get(*server + "/api/v1/work/" + server_response["id"].(string) + "?timeout=300")
 	if err != nil {
 		return false
 	}
@@ -92,9 +91,9 @@ func scale(worker_id int) bool {
 	return true
 }
 
-func worker(id int, count int, done chan int) {
+func worker(id int, count int, done chan int, server *string) {
 	for i := 0; i < count; i++ {
-		ok := scale(id)
+		ok := scale(id, server)
 		mutex.Lock()
 		total++
 		if !ok {
@@ -123,12 +122,13 @@ func log_stats(c chan bool) {
 func main() {
 	concurrency := flag.Int("concurrency", 1, "Max concurrent requests")
 	count := flag.Int("count", 5, "Total requests (per worker)")
+	server := flag.String("server", "http://localhost:3000", "Remote server to use")
 	flag.Parse()
 	log.Printf("Running test with %d workers, %d requests per worker.\n", *concurrency, *count)
 	c := make(chan int, *concurrency)
 	d := make(chan bool)
 	for i := 0; i < *concurrency; i++ {
-		go worker(i, *count, c)
+		go worker(i, *count, c, server)
 	}
 	go log_stats(d)
 	for i := 0; i < *concurrency; i++ {
